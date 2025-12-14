@@ -1,0 +1,18 @@
+# Secrets
+credentials.json
+*.json
+.env
+
+# Cloud
+key.json
+token.json
+
+# Python
+__pycache__/
+venv/
+*.py[cod]
+
+# Node
+node_modules/
+dist/
+.DS_Store
