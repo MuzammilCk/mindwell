@@ -1,88 +1,101 @@
 import functions_framework
 from flask import jsonify
-from flask_cors import cross_origin
 from google.cloud import firestore
 import vertexai
 from vertexai.generative_models import GenerativeModel
 import datetime
 import os
 
-# --- INTELLIGENCE CONFIG ---
-# Replace with your actual Google Cloud Project ID
-PROJECT_ID = os.environ.get("GCP_PROJECT", "mindwell-481215") 
+# --- CONFIGURATION ---
+# Auto-detect project ID or use default
+PROJECT_ID = os.environ.get("GCP_PROJECT") or "your-project-id"
 LOCATION = "us-central1"
 
-# Initialize Database
+# --- INIT CLIENTS ---
 try:
     db = firestore.Client()
-except:
+except Exception as e:
+    print(f"⚠️ Firestore Warning: {e}")
     db = None
 
-# Initialize Vertex AI (The "Brain")
 try:
     vertexai.init(project=PROJECT_ID, location=LOCATION)
-    # Gemini 1.5 Pro is smarter for analysis than Flash
-    model = GenerativeModel("gemini-1.5-pro-preview-0409")
-except:
+    # Using Gemini 1.5 Flash for speed
+    model = GenerativeModel("gemini-1.5-flash-001")
+except Exception as e:
+    print(f"⚠️ Vertex AI Warning: {e}")
     model = None
 
 @functions_framework.http
-@cross_origin()
 def submit_screening_report(request):
     """
-    INTELLIGENCE LAYER:
-    1. Receives the Agent's rough score.
-    2. Asks Vertex AI to validate it (Second Opinion).
-    3. Saves the "Smart" report to Firestore.
+    1. Receives data from Agent.
+    2. Uses Vertex AI to generate a 'Clinical Impression'.
+    3. Saves to Firestore.
     """
-    request_json = request.get_json(silent=True)
-    if not request_json:
-        return jsonify({"error": "No data"}), 400
-
-    risk_score = request_json.get('risk_score')
-    summary = request_json.get('summary', '')
-    
-    # --- VERTEX AI ANALYSIS ---
-    clinical_analysis = "AI Analysis Unavailable"
-    if model:
-        try:
-            # This makes it "Intelligent". The AI reviews the case.
-            prompt = f"""
-            You are a senior clinical psychiatrist. Review this screening:
-            Patient Statement: "{summary}"
-            Preliminary Risk Score: {risk_score}/10
-            
-            Task:
-            1. Validate if the score matches the symptoms.
-            2. Write a 1-sentence clinical impression for the doctor.
-            """
-            response = model.generate_content(prompt)
-            clinical_analysis = response.text.strip()
-            print(f"🧠 Vertex AI Thought: {clinical_analysis}")
-        except Exception as e:
-            clinical_analysis = f"Error: {str(e)}"
-
-    # --- MEMORY (Save to DB) ---
-    if db:
-        doc_ref = db.collection('screenings').add({
-            "risk_score": risk_score,
-            "summary": summary,
-            "clinical_analysis": clinical_analysis, # <--- The intelligent part
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-            "source": "ElevenLabs Agent"
+    # CORS Headers
+    if request.method == 'OPTIONS':
+        return ('', 204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Headers': 'Content-Type'
         })
 
-    return jsonify({
+    headers = {'Access-Control-Allow-Origin': '*'}
+    request_json = request.get_json(silent=True)
+    
+    if not request_json:
+        return (jsonify({"error": "No JSON received"}), 400, headers)
+
+    risk_score = request_json.get('risk_score')
+    summary = request_json.get('summary', 'No summary.')
+
+    # --- THE INTELLIGENCE (Vertex AI) ---
+    clinical_note = "AI Analysis Unavailable"
+    if model:
+        try:
+            print(f"🧠 Asking Gemini to review: {summary}")
+            prompt = f"""
+            Act as a senior psychiatrist. 
+            Review this student screening:
+            - Summary: "{summary}"
+            - Risk Score: {risk_score}/10
+            
+            Task: Write a 1-sentence clinical impression validating this score.
+            """
+            response = model.generate_content(prompt)
+            clinical_note = response.text.strip()
+            print(f"✅ Gemini Response: {clinical_note}")
+        except Exception as e:
+            print(f"❌ AI Error: {e}")
+
+    # --- SAVE TO DATABASE ---
+    if db:
+        try:
+            doc_ref = db.collection('screenings').add({
+                "risk_score": risk_score,
+                "summary": summary,
+                "clinical_impression": clinical_note, # <--- The Smart Part
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+                "source": "MindWell Agent"
+            })
+            print("💾 Saved to Firestore")
+        except Exception as e:
+            print(f"❌ DB Error: {e}")
+
+    return (jsonify({
         "status": "success", 
-        "ai_validation": clinical_analysis
-    }), 200
+        "ai_validation": clinical_note
+    }), 200, headers)
 
 @functions_framework.http
-@cross_origin()
 def get_helplines(request):
-    """ Returns critical resources. """
+    """ Returns specific Indian resources. """
+    if request.method == 'OPTIONS':
+        return ('', 204, {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type'})
+
     helplines = [
         {"name": "Tele-MANAS", "number": "14416", "desc": "Govt. of India (24/7)"},
         {"name": "iCALL", "number": "9152987821", "desc": "TISS (Mon-Sat)"}
     ]
-    return jsonify({"helplines": helplines}), 200
+    return (jsonify({"helplines": helplines}), 200, {'Access-Control-Allow-Origin': '*'})

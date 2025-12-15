@@ -6,12 +6,11 @@ export function Conversation({ setRiskData, setShowHelplines }) {
     const [agentId] = useState(import.meta.env.VITE_ELEVENLABS_AGENT_ID || '');
     const [statusText, setStatusText] = useState('Idle');
 
-    // --- INTELLIGENT TOOL HANDLERS ---
+    // --- CLIENT TOOL HANDLER (This makes it "Conversational") ---
     const submitScreeningReport = useCallback(async ({ risk_score, summary }) => {
         setStatusText('Analyzing Risk...');
         try {
-            // Call the Intelligent Backend
-            // REPLACE with your actual Cloud Function URL
+            // REPLACE with your actual deployed Cloud Function URL
             const response = await fetch('http://localhost:8080/submit_screening_report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -19,7 +18,7 @@ export function Conversation({ setRiskData, setShowHelplines }) {
             });
             const data = await response.json();
 
-            // Update the UI with the AI's Analysis
+            // Show the AI's "Thought" on the screen
             if (setRiskData) {
                 setRiskData({
                     score: risk_score,
@@ -27,26 +26,25 @@ export function Conversation({ setRiskData, setShowHelplines }) {
                     validation: data.ai_validation
                 });
             }
-
-            setStatusText('Assessment Saved');
-            return "Report saved and analyzed by Vertex AI.";
+            setStatusText('Saved');
+            return "Report saved and validated by Vertex AI.";
         } catch (error) {
-            console.error("Tool Error:", error);
-            return "Failed to save report.";
+            console.error(error);
+            return "Failed to save.";
         }
     }, [setRiskData]);
 
     const getHelplines = useCallback(async () => {
         if (setShowHelplines) setShowHelplines(true);
-        return "Displaying helpline numbers now.";
+        return "Displaying helplines now.";
     }, [setShowHelplines]);
 
-    // --- ELEVENLABS CONFIG ---
+    // --- AGENT CONFIG ---
     const conversation = useConversation({
         onConnect: () => setStatusText('Connected'),
         onDisconnect: () => setStatusText('Disconnected'),
         onModeChange: (mode) => setStatusText(mode.mode === 'speaking' ? 'Agent Speaking' : 'Listening'),
-        // CLIENT TOOLS: This connects the Brain (Agent) to the Body (App)
+        // CRITICAL: Register the tools here
         clientTools: {
             submit_screening_report: submitScreeningReport,
             get_helplines: getHelplines
@@ -60,21 +58,16 @@ export function Conversation({ setRiskData, setShowHelplines }) {
         if (isConnected) {
             await conversation.endSession();
         } else {
-            if (!agentId || agentId === 'your_agent_id_here') {
-                alert("Agent ID missing! Check .env");
-                return;
-            }
+            if (!agentId) return alert("Agent ID missing!");
             try {
                 await navigator.mediaDevices.getUserMedia({ audio: true });
                 await conversation.startSession({ agentId: agentId });
-            } catch (err) {
-                console.error("Failed:", err);
-            }
+            } catch (err) { console.error(err); }
         }
     };
 
     return (
-        <div className="flex flex-col items-center justify-center gap-4">
+        <div className="flex flex-col items-center justify-center">
             {/* THE ORB */}
             <motion.button
                 onClick={toggleConversation}
