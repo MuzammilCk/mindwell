@@ -27,7 +27,7 @@ export function Conversation({ setRiskData, setShowHelplines }) {
                 });
             }
             setStatusText('Saved');
-            return "Report saved and validated by Vertex AI.";
+            return "Report saved and validated by Gemini API.";
         } catch (error) {
             console.error(error);
             return "Failed to save.";

@@ -31,6 +31,19 @@ if (Test-Path $credPath) {
     Write-Host "⚠️ No credentials.json found at $credPath. Firestore might fail." -ForegroundColor Yellow
 }
 
+# 6. Load Gemini API Key (for AI Studio)
+$envFile = Join-Path $PSScriptRoot "cloud-functions\.env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match "GEMINI_API_KEY=(.*)") {
+            $env:GEMINI_API_KEY = $matches[1]
+            Write-Host "🔑 Found GEMINI_API_KEY!" -ForegroundColor Green
+        }
+    }
+} else {
+     Write-Host "⚠️ No .env file found in cloud-functions. Gemini API might fail." -ForegroundColor Yellow
+}
+
 # 6. Run the function
 Write-Host "✅ Setup Complete!" -ForegroundColor Green
 Write-Host "Starting 'submit_screening_report' on http://localhost:8080..." -ForegroundColor Yellow

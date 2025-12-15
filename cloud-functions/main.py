@@ -1,39 +1,41 @@
 import functions_framework
 from flask import jsonify
 from google.cloud import firestore
-import vertexai
-from vertexai.generative_models import GenerativeModel
+import google.generativeai as genai  # <--- NEW LIBRARY
 import datetime
 import os
 
 # --- CONFIGURATION ---
-# Auto-detect project ID (GOOGLE_CLOUD_PROJECT is the standard for Gen 2 functions)
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "mindwell-481215")
-
-LOCATION = "us-central1"
+# 1. Get your API Key from: https://aistudio.google.com/app/apikey
+# 2. Add it to your Cloud Function Environment Variables as "GEMINI_API_KEY"
+API_KEY = "AIzaSyCmyaNrA30-b0As7_5TqZvmzwUgg7BVDg8"
 
 # --- INIT CLIENTS ---
-init_error = None
+# Initialize Firestore (Database)
 try:
     db = firestore.Client()
 except Exception as e:
     print(f"⚠️ Firestore Warning: {e}")
     db = None
 
-try:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-    # Using Gemini 1.5 Flash for speed
-    model = GenerativeModel("gemini-1.5-flash-001")
-except Exception as e:
-    print(f"⚠️ Vertex AI Warning: {e}")
-    init_error = str(e)
-    model = None
+# Initialize Gemini API (The Brain)
+model = None
+if API_KEY:
+    try:
+        genai.configure(api_key=API_KEY)
+        # Using Gemini 2.0 Flash (Experimental) as requested
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        print("✅ Gemini API Connected (Model: gemini-2.0-flash-exp)")
+    except Exception as e:
+        print(f"⚠️ Gemini API Error: {e}")
+else:
+    print("⚠️ GEMINI_API_KEY missing from environment variables")
 
 @functions_framework.http
 def submit_screening_report(request):
     """
     1. Receives data from Agent.
-    2. Uses Vertex AI to generate a 'Clinical Impression'.
+    2. Uses Gemini API (Studio) to generate a 'Clinical Impression'.
     3. Saves to Firestore.
     """
     # CORS Headers
@@ -53,10 +55,9 @@ def submit_screening_report(request):
     risk_score = request_json.get('risk_score')
     summary = request_json.get('summary', 'No summary.')
 
-    # --- THE INTELLIGENCE (Vertex AI + Fallback) ---
+    # --- THE INTELLIGENCE (Gemini API) ---
     clinical_note = "AI Analysis Unavailable"
     
-    # 1. Try Real AI (Gemini)
     if model:
         try:
             print(f"🧠 Asking Gemini to review: {summary}")
@@ -68,24 +69,15 @@ def submit_screening_report(request):
             
             Task: Write a 1-sentence clinical impression validating this score.
             """
+            
+            # Generate content
             response = model.generate_content(prompt)
             clinical_note = response.text.strip()
             print(f"✅ Gemini Response: {clinical_note}")
+            
         except Exception as e:
-            print(f"⚠️ Vertex AI Error (Falling back to local logic): {e}")
-            model = None # Trigger fallback below
-
-    # 2. Fallback Intelligence (If Billing Disabled)
-    # This ensures your demo works PERFECTLY even without credits.
-    if not model or clinical_note.startswith("Error"):
-        score_val = float(risk_score) if risk_score else 0
-        if score_val >= 7:
-            clinical_note = "CLINICAL ALERT: High severity indicators detected. Immediate professional evaluation recommended."
-        elif score_val >= 4:
-            clinical_note = "Moderate distress markers present. Preventive counseling and follow-up suggested."
-        else:
-            clinical_note = "Low clinical risk. Patient demonstrates stability; standard wellness resources advised."
-        print(f"✅ Generated Fallback Note: {clinical_note}")
+            print(f"❌ Gemini Error: {e}")
+            clinical_note = f"Error: {str(e)}"
 
     # --- SAVE TO DATABASE ---
     if db:
@@ -93,9 +85,9 @@ def submit_screening_report(request):
             doc_ref = db.collection('screenings').add({
                 "risk_score": risk_score,
                 "summary": summary,
-                "clinical_impression": clinical_note, # <--- The Smart Part
+                "clinical_impression": clinical_note,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                "source": "MindWell Agent"
+                "source": "MindWell Agent (Gemini API)"
             })
             print("💾 Saved to Firestore")
         except Exception as e:
