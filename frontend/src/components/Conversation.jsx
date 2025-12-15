@@ -2,13 +2,14 @@ import { useConversation } from '@elevenlabs/react';
 import { motion } from 'framer-motion';
 import { useState, useCallback } from 'react';
 
-export function Conversation({ setRiskData, setShowHelplines }) {
+export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, onSessionStart, onSessionEnd }) {
     const [agentId] = useState(import.meta.env.VITE_ELEVENLABS_AGENT_ID || '');
     const [statusText, setStatusText] = useState('Idle');
 
     // --- CLIENT TOOL HANDLER (This makes it "Conversational") ---
     const submitScreeningReport = useCallback(async ({ risk_score, summary }) => {
         setStatusText('Analyzing Risk...');
+        if (setIsProcessing) setIsProcessing(true); // START LOADING
         try {
             // REPLACE with your actual deployed Cloud Function URL
             const response = await fetch('http://localhost:8080/submit_screening_report', {
@@ -27,12 +28,14 @@ export function Conversation({ setRiskData, setShowHelplines }) {
                 });
             }
             setStatusText('Saved');
+            if (setIsProcessing) setIsProcessing(false); // STOP LOADING
             return "Report saved and validated by Gemini API.";
         } catch (error) {
             console.error(error);
+            if (setIsProcessing) setIsProcessing(false); // STOP LOADING
             return "Failed to save.";
         }
-    }, [setRiskData]);
+    }, [setRiskData, setIsProcessing]);
 
     const getHelplines = useCallback(async () => {
         if (setShowHelplines) setShowHelplines(true);
@@ -41,8 +44,14 @@ export function Conversation({ setRiskData, setShowHelplines }) {
 
     // --- AGENT CONFIG ---
     const conversation = useConversation({
-        onConnect: () => setStatusText('Connected'),
-        onDisconnect: () => setStatusText('Disconnected'),
+        onConnect: () => {
+            setStatusText('Connected');
+            if (onSessionStart) onSessionStart();
+        },
+        onDisconnect: () => {
+            setStatusText('Disconnected');
+            if (onSessionEnd) onSessionEnd();
+        },
         onModeChange: (mode) => setStatusText(mode.mode === 'speaking' ? 'Agent Speaking' : 'Listening'),
         // CRITICAL: Register the tools here
         clientTools: {

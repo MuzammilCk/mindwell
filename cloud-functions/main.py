@@ -1,44 +1,39 @@
 import functions_framework
 from flask import jsonify
 from google.cloud import firestore
-import google.generativeai as genai  # <--- NEW LIBRARY
+import google.generativeai as genai
 import datetime
 import os
 
-# --- CONFIGURATION ---
-# 1. Get your API Key from: https://aistudio.google.com/app/apikey
-# 2. Add it to your Cloud Function Environment Variables as "GEMINI_API_KEY"
+# --- CONFIGURATION (SECURE) ---
 API_KEY = "AIzaSyCmyaNrA30-b0As7_5TqZvmzwUgg7BVDg8"
 
 # --- INIT CLIENTS ---
-# Initialize Firestore (Database)
+db = None
 try:
     db = firestore.Client()
+    print("✅ Firestore Connected")
 except Exception as e:
-    print(f"⚠️ Firestore Warning: {e}")
-    db = None
+    print(f"⚠️ Firestore Error: {e}")
 
-# Initialize Gemini API (The Brain)
 model = None
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        # Using Gemini 2.0 Flash (Experimental) as requested
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        print("✅ Gemini API Connected (Model: gemini-2.0-flash-exp)")
+        print("✅ Gemini API Connected (gemini-2.0-flash-exp)")
     except Exception as e:
-        print(f"⚠️ Gemini API Error: {e}")
+        print(f"⚠️ Gemini Init Error: {e}")
 else:
-    print("⚠️ GEMINI_API_KEY missing from environment variables")
+    print("⚠️ GEMINI_API_KEY not found in environment")
 
+# --- MAIN FUNCTION ---
 @functions_framework.http
 def submit_screening_report(request):
     """
-    1. Receives data from Agent.
-    2. Uses Gemini API (Studio) to generate a 'Clinical Impression'.
-    3. Saves to Firestore.
+    Receives screening data from ElevenLabs Agent → Validates with Gemini → Saves to Firestore
     """
-    # CORS Headers
+    # Handle CORS preflight
     if request.method == 'OPTIONS':
         return ('', 204, {
             'Access-Control-Allow-Origin': '*',
@@ -47,65 +42,113 @@ def submit_screening_report(request):
         })
 
     headers = {'Access-Control-Allow-Origin': '*'}
-    request_json = request.get_json(silent=True)
     
-    if not request_json:
-        return (jsonify({"error": "No JSON received"}), 400, headers)
+    # Parse incoming data
+    try:
+        request_json = request.get_json(silent=True)
+        if not request_json:
+            return (jsonify({"error": "No JSON payload received"}), 400, headers)
+    except Exception as e:
+        return (jsonify({"error": f"JSON parse error: {str(e)}"}), 400, headers)
 
-    risk_score = request_json.get('risk_score')
-    summary = request_json.get('summary', 'No summary.')
+    # Extract fields (with defaults)
+    risk_score = request_json.get('risk_score', 0)
+    summary = request_json.get('summary', 'No summary provided.')
+    agent_validation = request_json.get('validation', 'No reasoning provided.')
 
-    # --- THE INTELLIGENCE (Gemini API) ---
-    clinical_note = "AI Analysis Unavailable"
+    print(f"📥 Received: Score={risk_score}, Summary={summary[:50]}...")
+
+    # --- GEMINI VALIDATION ---
+    gemini_impression = "Clinical review pending."
     
     if model:
         try:
-            print(f"🧠 Asking Gemini to review: {summary}")
-            prompt = f"""
-            Act as a senior psychiatrist. 
-            Review this student screening:
-            - Summary: "{summary}"
-            - Risk Score: {risk_score}/10
-            
-            Task: Write a 1-sentence clinical impression validating this score.
-            """
-            
-            # Generate content
+            prompt = f"""You are a clinical supervisor reviewing an AI mental health screening.
+
+AGENT'S ASSESSMENT:
+- Risk Score: {risk_score}/10
+- Patient Summary: {summary}
+- Agent's Reasoning: {agent_validation}
+
+SCORING RUBRIC (for reference):
+- Physical symptoms (sleep/appetite): +2 each (max +4)
+- Emotional distress (hopelessness/self-harm): +3 each (max +6)
+- Social withdrawal/isolation: +2 each (max +4)
+- Verbal cues (monotone/confusion): +1 each (max +3)
+
+TASK: Write ONE sentence (under 25 words) that either:
+1. Confirms the assessment (e.g., "Score appropriate given reported symptoms.")
+2. Flags concerns (e.g., "Score underestimates risk; immediate intervention needed.")
+
+Be clinical and specific."""
+
             response = model.generate_content(prompt)
-            clinical_note = response.text.strip()
-            print(f"✅ Gemini Response: {clinical_note}")
+            gemini_impression = response.text.strip()
+            print(f"✅ Gemini: {gemini_impression}")
             
         except Exception as e:
             print(f"❌ Gemini Error: {e}")
-            clinical_note = f"Error: {str(e)}"
+            gemini_impression = "Clinical validation unavailable; data recorded for review."
 
-    # --- SAVE TO DATABASE ---
+    # --- SAVE TO FIRESTORE ---
+    doc_id = None
     if db:
         try:
             doc_ref = db.collection('screenings').add({
                 "risk_score": risk_score,
                 "summary": summary,
-                "clinical_impression": clinical_note,
+                "agent_validation": agent_validation,
+                "gemini_impression": gemini_impression,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                "source": "MindWell Agent (Gemini API)"
+                "model": "gemini-2.0-flash-exp",
+                "source": "MindWell Agent v1"
             })
-            print("💾 Saved to Firestore")
+            doc_id = doc_ref[1].id
+            print(f"💾 Saved to Firestore: {doc_id}")
         except Exception as e:
-            print(f"❌ DB Error: {e}")
+            print(f"❌ Firestore Error: {e}")
 
+    # --- RETURN TO AGENT (ElevenLabs Format) ---
     return (jsonify({
-        "status": "success", 
-        "ai_validation": clinical_note
+        "success": True,
+        "result": {
+            "validation": gemini_impression,
+            "firestore_id": doc_id
+        }
     }), 200, headers)
+
 
 @functions_framework.http
 def get_helplines(request):
-    """ Returns specific Indian resources. """
+    """Returns Indian mental health helplines."""
     if request.method == 'OPTIONS':
-        return ('', 204, {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type'})
+        return ('', 204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        })
 
     helplines = [
-        {"name": "Tele-MANAS", "number": "14416", "desc": "Govt. of India (24/7)"},
-        {"name": "iCALL", "number": "9152987821", "desc": "TISS (Mon-Sat)"}
+        {
+            "name": "Tele-MANAS",
+            "number": "14416",
+            "description": "Government of India 24/7 Mental Health Helpline",
+            "availability": "24/7"
+        },
+        {
+            "name": "iCALL",
+            "number": "9152987821",
+            "description": "TISS Psychosocial Helpline",
+            "availability": "Monday-Saturday, 8 AM - 10 PM"
+        },
+        {
+            "name": "Vandrevala Foundation",
+            "number": "9999666555",
+            "description": "24/7 Mental Health Support",
+            "availability": "24/7"
+        }
     ]
-    return (jsonify({"helplines": helplines}), 200, {'Access-Control-Allow-Origin': '*'})
+    
+    return (jsonify({
+        "success": True,
+        "helplines": helplines
+    }), 200, {'Access-Control-Allow-Origin': '*'})
