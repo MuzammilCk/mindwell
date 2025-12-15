@@ -8,10 +8,11 @@ import os
 
 # --- CONFIGURATION ---
 # Auto-detect project ID or use default
-PROJECT_ID = os.environ.get("GCP_PROJECT") or "your-project-id"
+PROJECT_ID = os.environ.get("GCP_PROJECT") or "mindwell-481215"
 LOCATION = "us-central1"
 
 # --- INIT CLIENTS ---
+init_error = None
 try:
     db = firestore.Client()
 except Exception as e:
@@ -24,6 +25,7 @@ try:
     model = GenerativeModel("gemini-1.5-flash-001")
 except Exception as e:
     print(f"⚠️ Vertex AI Warning: {e}")
+    init_error = str(e)
     model = None
 
 @functions_framework.http
@@ -52,6 +54,7 @@ def submit_screening_report(request):
 
     # --- THE INTELLIGENCE (Vertex AI) ---
     clinical_note = "AI Analysis Unavailable"
+    
     if model:
         try:
             print(f"🧠 Asking Gemini to review: {summary}")
@@ -67,7 +70,11 @@ def submit_screening_report(request):
             clinical_note = response.text.strip()
             print(f"✅ Gemini Response: {clinical_note}")
         except Exception as e:
-            print(f"❌ AI Error: {e}")
+            err_msg = str(e)
+            print(f"❌ AI Error: {err_msg}")
+            clinical_note = f"Error: {err_msg}"
+    else:
+        clinical_note = f"Init Failed: {init_error}" if init_error else "Model not initialized"
 
     # --- SAVE TO DATABASE ---
     if db:
