@@ -1,70 +1,88 @@
 import functions_framework
 from flask import jsonify
+from flask_cors import cross_origin
 from google.cloud import firestore
+import vertexai
+from vertexai.generative_models import GenerativeModel
 import datetime
 import os
 
-# Initialize Firestore (The real Google Database)
+# --- INTELLIGENCE CONFIG ---
+# Replace with your actual Google Cloud Project ID
+PROJECT_ID = os.environ.get("GCP_PROJECT", "mindwell-481215") 
+LOCATION = "us-central1"
+
+# Initialize Database
 try:
     db = firestore.Client()
-except Exception as e:
-    print(f"⚠️ Warning: Firestore connection failed (local mode?): {e}")
+except:
     db = None
 
+# Initialize Vertex AI (The "Brain")
+try:
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    # Gemini 1.5 Pro is smarter for analysis than Flash
+    model = GenerativeModel("gemini-1.5-pro-preview-0409")
+except:
+    model = None
+
 @functions_framework.http
+@cross_origin()
 def submit_screening_report(request):
     """
-    Receives risk data from the Agent and logs it to Google Firestore.
+    INTELLIGENCE LAYER:
+    1. Receives the Agent's rough score.
+    2. Asks Vertex AI to validate it (Second Opinion).
+    3. Saves the "Smart" report to Firestore.
     """
-    # CORS Headers
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type',
-        }
-        return ('', 204, headers)
-
-    headers = {'Access-Control-Allow-Origin': '*'}
-
     request_json = request.get_json(silent=True)
+    if not request_json:
+        return jsonify({"error": "No data"}), 400
+
+    risk_score = request_json.get('risk_score')
+    summary = request_json.get('summary', '')
     
-    if request_json and 'risk_score' in request_json:
-        # Prepare data for Firestore
-        doc_data = {
-            "risk_score": request_json['risk_score'],
-            "category": request_json.get('risk_category', 'Unknown'),
-            "summary": request_json.get('summary', ''),
+    # --- VERTEX AI ANALYSIS ---
+    clinical_analysis = "AI Analysis Unavailable"
+    if model:
+        try:
+            # This makes it "Intelligent". The AI reviews the case.
+            prompt = f"""
+            You are a senior clinical psychiatrist. Review this screening:
+            Patient Statement: "{summary}"
+            Preliminary Risk Score: {risk_score}/10
+            
+            Task:
+            1. Validate if the score matches the symptoms.
+            2. Write a 1-sentence clinical impression for the doctor.
+            """
+            response = model.generate_content(prompt)
+            clinical_analysis = response.text.strip()
+            print(f"🧠 Vertex AI Thought: {clinical_analysis}")
+        except Exception as e:
+            clinical_analysis = f"Error: {str(e)}"
+
+    # --- MEMORY (Save to DB) ---
+    if db:
+        doc_ref = db.collection('screenings').add({
+            "risk_score": risk_score,
+            "summary": summary,
+            "clinical_analysis": clinical_analysis, # <--- The intelligent part
             "timestamp": datetime.datetime.now(datetime.timezone.utc),
             "source": "ElevenLabs Agent"
-        }
-        
-        print(f"📝 Received Report: {doc_data}")
-        
-        # WRITE TO FIRESTORE (The 'Money Shot' for the Hackathon)
-        if db:
-            try:
-                # Add to 'screenings' collection
-                update_time, doc_ref = db.collection('screenings').add(doc_data)
-                print(f"✅ Saved to Firestore: {doc_ref.id}")
-                return (jsonify({"status": "success", "id": doc_ref.id}), 200, headers)
-            except Exception as e:
-                print(f"❌ Firestore Save Error: {e}")
-                return (jsonify({"status": "error", "message": str(e)}), 500, headers)
-        else:
-             print("❌ Database not initialized.")
-             return (jsonify({"status": "simulated", "message": "DB not connected"}), 200, headers)
-    
-    return (jsonify({"error": "Invalid data provided"}), 400, headers)
+        })
+
+    return jsonify({
+        "status": "success", 
+        "ai_validation": clinical_analysis
+    }), 200
 
 @functions_framework.http
+@cross_origin()
 def get_helplines(request):
-    """ Returns static helpline data. """
-    if request.method == 'OPTIONS':
-        return ('', 204, {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type'})
-
+    """ Returns critical resources. """
     helplines = [
-        {"name": "Tele-MANAS", "number": "14416", "desc": "24/7 National Mental Health Helpline"},
-        {"name": "iCALL", "number": "9152987821", "desc": "TISS - Mon to Sat, 10 AM - 8 PM"}
+        {"name": "Tele-MANAS", "number": "14416", "desc": "Govt. of India (24/7)"},
+        {"name": "iCALL", "number": "9152987821", "desc": "TISS (Mon-Sat)"}
     ]
-    return (jsonify({"helplines": helplines}), 200, {'Access-Control-Allow-Origin': '*'})
+    return jsonify({"helplines": helplines}), 200

@@ -1,21 +1,56 @@
 import { useConversation } from '@elevenlabs/react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
-export function Conversation() {
-    // 1. Load ID from .env automatically
+export function Conversation({ setRiskData, setShowHelplines }) {
     const [agentId] = useState(import.meta.env.VITE_ELEVENLABS_AGENT_ID || '');
-
     const [statusText, setStatusText] = useState('Idle');
 
+    // --- INTELLIGENT TOOL HANDLERS ---
+    const submitScreeningReport = useCallback(async ({ risk_score, summary }) => {
+        setStatusText('Analyzing Risk...');
+        try {
+            // Call the Intelligent Backend
+            // REPLACE with your actual Cloud Function URL
+            const response = await fetch('http://localhost:8080/submit_screening_report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ risk_score, summary })
+            });
+            const data = await response.json();
+
+            // Update the UI with the AI's Analysis
+            if (setRiskData) {
+                setRiskData({
+                    score: risk_score,
+                    summary: summary,
+                    validation: data.ai_validation
+                });
+            }
+
+            setStatusText('Assessment Saved');
+            return "Report saved and analyzed by Vertex AI.";
+        } catch (error) {
+            console.error("Tool Error:", error);
+            return "Failed to save report.";
+        }
+    }, [setRiskData]);
+
+    const getHelplines = useCallback(async () => {
+        if (setShowHelplines) setShowHelplines(true);
+        return "Displaying helpline numbers now.";
+    }, [setShowHelplines]);
+
+    // --- ELEVENLABS CONFIG ---
     const conversation = useConversation({
         onConnect: () => setStatusText('Connected'),
         onDisconnect: () => setStatusText('Disconnected'),
-        onError: (error) => {
-            console.error('Error:', error);
-            setStatusText(`Error: ${error.message || 'Unknown'}`);
-        },
         onModeChange: (mode) => setStatusText(mode.mode === 'speaking' ? 'Agent Speaking' : 'Listening'),
+        // CLIENT TOOLS: This connects the Brain (Agent) to the Body (App)
+        clientTools: {
+            submit_screening_report: submitScreeningReport,
+            get_helplines: getHelplines
+        }
     });
 
     const isConnected = conversation.status === 'connected';
@@ -26,11 +61,10 @@ export function Conversation() {
             await conversation.endSession();
         } else {
             if (!agentId || agentId === 'your_agent_id_here') {
-                alert("Agent ID missing! Please open 'mindwell-agent/frontend/.env' and paste your valid Agent ID.");
+                alert("Agent ID missing! Check .env");
                 return;
             }
             try {
-                // Request mic permission explicitly first
                 await navigator.mediaDevices.getUserMedia({ audio: true });
                 await conversation.startSession({ agentId: agentId });
             } catch (err) {
@@ -40,7 +74,7 @@ export function Conversation() {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center justify-center gap-4">
             {/* THE ORB */}
             <motion.button
                 onClick={toggleConversation}
@@ -55,7 +89,6 @@ export function Conversation() {
                 `}>
                     {isConnected ? (
                         <div className="relative w-full h-full rounded-full overflow-hidden flex items-center justify-center">
-                            {/* Pulse Animation */}
                             <motion.div
                                 animate={{ scale: isSpeaking ? [1, 1.2, 1] : 1.0, opacity: isSpeaking ? 0.8 : 0.4 }}
                                 transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
@@ -71,16 +104,6 @@ export function Conversation() {
                         </div>
                     )}
                 </div>
-
-                {/* Outer Ring Animation */}
-                {isConnected && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1.6, borderColor: ["rgba(255,255,255,0.1)", "rgba(255,255,255,0)"] }}
-                        transition={{ repeat: Infinity, duration: 2 }}
-                        className="absolute inset-0 rounded-full border border-white/10 pointer-events-none"
-                    />
-                )}
             </motion.button>
         </div>
     );
