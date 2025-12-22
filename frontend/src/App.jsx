@@ -116,6 +116,12 @@ function App() {
     return 'text-green-400';
   }
 
+  const resetSession = () => {
+    setRiskData(null);
+    setShowHelplines(false);
+    setIsSessionActive(false);
+  };
+
   return (
     <div className="h-screen w-screen bg-[#080808] text-white flex flex-col relative overflow-hidden font-serif selection:bg-white selection:text-black">
       {/* Background Ambience */}
@@ -237,6 +243,22 @@ function App() {
                     ))}
                   </motion.div>
                 )}
+
+                {/* RESET BUTTON */}
+                <div className="mt-12 flex justify-center border-t border-white/5 pt-8">
+                  <button
+                    onClick={resetSession}
+                    className="group flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/30 rounded-full transition-all duration-300"
+                  >
+                    <span className="text-[10px] tracking-[0.2em] text-gray-400 group-hover:text-white uppercase transition-colors">
+                      Start New Session
+                    </span>
+                    <svg className="w-3 h-3 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+
               </motion.div>
             ) : (
               /* B. ORB VIEW (Persistent) */
@@ -262,7 +284,7 @@ function App() {
           </AnimatePresence>
         </motion.div>
 
-      </main>
+      </main >
 
       {!isSessionActive && !riskData && (
         <footer className="absolute bottom-0 left-0 z-10 flex justify-between items-center px-8 md:px-12 pb-8 pt-4 text-[10px] tracking-[0.1em] font-sans text-gray-600 w-full">
@@ -272,8 +294,9 @@ function App() {
           </div>
           <div className="cursor-pointer hover:text-white transition-colors">SUPPORT</div>
         </footer>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 }
 

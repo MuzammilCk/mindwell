@@ -32,7 +32,10 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
             }
             setStatusText('Saved');
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-            return "Report saved. Clinical analysis complete.";
+
+            // 2. [CRITICAL FIX] Return the GEMINI result to the ElevenLabs Agent
+            // This allows the Agent to say: "I see the report indicates high anxiety..."
+            return `Report processed. Clinical Result: ${data.result?.validation}. Risk Score: ${data.result?.score}.`;
         } catch (error) {
             console.error(error);
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
