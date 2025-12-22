@@ -2,6 +2,101 @@ import { useState } from 'react';
 import { Conversation } from './components/Conversation';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// --- TYPEWRITER EFFECT COMPONENT ---
+const TypewriterText = ({ text }) => {
+  const [displayedText, setDisplayedText] = useState('');
+
+  // Reset when text changes
+  if (text !== displayedText && !displayedText.startsWith(text.substring(0, 1))) {
+    // This check is a bit naive for React strict mode, but useEffect below handles the typing.
+  }
+
+  useState(() => {
+    setDisplayedText('');
+  }, [text]);
+
+  const [index, setIndex] = useState(0);
+
+  // Effect to handle typing
+  if (index < text.length) {
+    setTimeout(() => {
+      setDisplayedText(prev => prev + text.charAt(index));
+      setIndex(prev => prev + 1);
+    }, 30); // Speed of typing
+  }
+
+  return <span>{displayedText}</span>;
+};
+
+// Hook version is cleaner for this functional component structure
+const useTypewriter = (text, speed = 30) => {
+  const [displayText, setDisplayText] = useState('');
+
+  useState(() => {
+    let i = 0;
+    const timer = setInterval(() => {
+      if (i < text.length) {
+        setDisplayText(prev => prev + text.charAt(i));
+        i++;
+      } else {
+        clearInterval(timer);
+      }
+    }, speed);
+    return () => clearInterval(timer);
+  }, [text, speed]);
+
+  return displayText;
+};
+
+// Simple Component wrapper for the hook
+const Typewriter = ({ text }) => {
+  const [display, setDisplay] = useState('');
+
+  // Reset/Start typing when text changes
+  const [hasStarted, setHasStarted] = useState(false);
+
+  if (!hasStarted) {
+    setHasStarted(true);
+    let i = 0;
+    const interval = setInterval(() => {
+      setDisplay(text.substring(0, i + 1));
+      i++;
+      if (i === text.length) clearInterval(interval);
+    }, 30);
+  }
+
+  return <span>{display || text}</span>; // Fallback to full text if logic glitches
+};
+
+// BETTER IMPLEMENTATION directly in the render with a key to reset
+const StreamingText = ({ content }) => {
+  const [text, setText] = useState("");
+
+  // Reset when content changes
+  if (content && text === "" && content.length > 0) {
+    // Trigger effect
+  }
+
+  const [started, setStarted] = useState(false);
+
+  // Using a simple interval in useEffect
+  useState(() => {
+    let i = -1;
+    const interval = setInterval(() => {
+      i++;
+      if (i <= content.length) {
+        setText(content.substring(0, i));
+      } else {
+        clearInterval(interval);
+      }
+    }, 30);
+    return () => clearInterval(interval);
+  }, [content]);
+
+  return <span>{text}</span>;
+};
+
+
 function App() {
   const [riskData, setRiskData] = useState(null);
   const [showHelplines, setShowHelplines] = useState(false);
@@ -10,10 +105,16 @@ function App() {
 
   // 1. Refined Risk Color Logic
   const getRiskColor = (score) => {
-    if (score >= 8) return 'text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]';
-    if (score >= 5) return 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.3)]';
-    return 'text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.3)]';
+    if (score >= 8) return 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.6)] animate-pulse';
+    if (score >= 5) return 'bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)]';
+    return 'bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.4)]';
   };
+
+  const getRiskTextColor = (score) => {
+    if (score >= 8) return 'text-red-400';
+    if (score >= 5) return 'text-yellow-400';
+    return 'text-green-400';
+  }
 
   return (
     <div className="h-screen w-screen bg-[#080808] text-white flex flex-col relative overflow-hidden font-serif selection:bg-white selection:text-black">
@@ -21,9 +122,6 @@ function App() {
       <div className="bg-noise fixed inset-0 opacity-5 pointer-events-none"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-white/5 rounded-full blur-[150px] pointer-events-none opacity-20"></div>
 
-
-
-      {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center gap-6 py-4 relative z-10 px-6 w-full max-w-7xl mx-auto">
 
         {/* 1. HERO TEXT (Fades out when session starts) */}
@@ -50,7 +148,7 @@ function App() {
           )}
         </AnimatePresence>
 
-        {/* 2. THE SESSION CONTAINER (Pushed to bottom/center via flex) */}
+        {/* 2. THE SESSION CONTAINER */}
         <motion.div
           initial={false}
           animate={{
@@ -66,7 +164,7 @@ function App() {
           transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
           className="relative flex flex-col items-center justify-center overflow-hidden min-h-[max-content]"
         >
-          {/* ANALYZING SPINNER (Fades in overlay) */}
+          {/* ANALYZING SPINNER */}
           <AnimatePresence>
             {isProcessing && (
               <motion.div
@@ -88,15 +186,33 @@ function App() {
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                 className="w-full text-left"
               >
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xs text-gray-400 tracking-[0.2em]">CLINICAL IMPRESSION</h3>
-                  <span className={`text-2xl font-serif italic ${getRiskColor(riskData.score)}`}>
-                    Risk Level: {riskData.score}/10
-                  </span>
+                {/* HEADLINE MARKER */}
+                <div className="flex justify-between items-end mb-6 border-b border-white/10 pb-4">
+                  <div>
+                    <h3 className="text-xs text-gray-500 tracking-[0.3em] mb-2">CLINICAL ANALYSIS</h3>
+                    <div className={`text-4xl font-serif italic ${getRiskTextColor(riskData.score)}`}>
+                      Risk Level {riskData.score}/10
+                    </div>
+                  </div>
+
+                  {/* VISUAL PROGRESS BAR */}
+                  <div className="w-32 h-2 bg-white/10 rounded-full overflow-hidden flex">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(riskData.score / 10) * 100}%` }}
+                      transition={{ duration: 1.5, ease: "easeOut" }}
+                      className={`h-full ${getRiskColor(riskData.score)}`}
+                    />
+                  </div>
                 </div>
-                <p className="text-xl md:text-2xl font-light leading-relaxed text-gray-200 font-serif mb-6">
-                  "{riskData.validation}"
-                </p>
+
+                {/* VALIDATION TEXT (Typewriter) */}
+                <div className="mb-8 min-h-[80px]">
+                  <p className="text-xl md:text-2xl font-light leading-relaxed text-gray-200 font-serif">
+                    "<StreamingText content={riskData.validation} />"
+                  </p>
+                </div>
+
                 <div className="pt-6 border-t border-white/5">
                   <span className="block text-[10px] text-gray-600 tracking-widest mb-1">PATIENT SUMMARY</span>
                   <p className="text-sm text-gray-400 font-sans leading-relaxed">{riskData.summary}</p>
@@ -132,7 +248,7 @@ function App() {
                   onSessionStart={() => setIsSessionActive(true)}
                   onSessionEnd={() => setIsSessionActive(false)}
                 />
-                {/* Listening Hint (Only active when in session but no results yet) */}
+                {/* Listening Hint */}
                 {isSessionActive && (
                   <motion.div
                     initial={{ opacity: 0 }} animate={{ opacity: 0.5 }}

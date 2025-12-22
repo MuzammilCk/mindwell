@@ -6,7 +6,7 @@ import datetime
 import os
 
 # --- CONFIGURATION (SECURE) ---
-API_KEY = "AIzaSyCmyaNrA30-b0As7_5TqZvmzwUgg7BVDg8"
+API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # --- INIT CLIENTS ---
 db = None
@@ -20,8 +20,8 @@ model = None
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        print("✅ Gemini API Connected (gemini-2.0-flash-exp)")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        print("✅ Gemini API Connected (gemini-1.5-flash)")
     except Exception as e:
         print(f"⚠️ Gemini Init Error: {e}")
 else:
@@ -51,68 +51,75 @@ def submit_screening_report(request):
     except Exception as e:
         return (jsonify({"error": f"JSON parse error: {str(e)}"}), 400, headers)
 
-    # Extract fields (with defaults)
-    risk_score = request_json.get('risk_score', 0)
+    # Extract fields (Agents only send summary now)
     summary = request_json.get('summary', 'No summary provided.')
-    agent_validation = request_json.get('validation', 'No reasoning provided.')
+    print(f"📥 Received Summary: {summary[:50]}...")
 
-    print(f"📥 Received: Score={risk_score}, Summary={summary[:50]}...")
-
-    # --- GEMINI VALIDATION ---
-    gemini_impression = "Clinical review pending."
+    # --- GEMINI INTELLIGENCE (Diagnosis & Scoring) ---
+    gemini_result = {
+        "score": 0,
+        "reasoning": "Assessment pending."
+    }
     
     if model:
         try:
-            prompt = f"""You are a clinical supervisor reviewing an AI mental health screening.
+            prompt = f"""You are a senior clinical psychologist. Analyze the following patient summary from a screening interview.
 
-AGENT'S ASSESSMENT:
-- Risk Score: {risk_score}/10
-- Patient Summary: {summary}
-- Agent's Reasoning: {agent_validation}
+PATIENT SUMMARY:
+{summary}
 
-SCORING RUBRIC (for reference):
-- Physical symptoms (sleep/appetite): +2 each (max +4)
-- Emotional distress (hopelessness/self-harm): +3 each (max +6)
-- Social withdrawal/isolation: +2 each (max +4)
-- Verbal cues (monotone/confusion): +1 each (max +3)
+TASK:
+1. Assign a Risk Score (0-10) based on these factors:
+   - Physical symptoms (sleep/appetite): +2
+   - Emotional distress (hopelessness): +3
+   - Social withdrawal: +2
+   - Risk of self-harm: +10 (Immediate High Risk)
+   
+2. Write a 1-sentence clinical validation (under 20 words).
 
-TASK: Write ONE sentence (under 25 words) that either:
-1. Confirms the assessment (e.g., "Score appropriate given reported symptoms.")
-2. Flags concerns (e.g., "Score underestimates risk; immediate intervention needed.")
-
-Be clinical and specific."""
-
-            response = model.generate_content(prompt)
-            gemini_impression = response.text.strip()
-            print(f"✅ Gemini: {gemini_impression}")
+OUTPUT FORMAT (Strict JSON):
+{{
+  "score": int,
+  "reasoning": "string"
+}}
+"""
+            response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+            import json
+            gemini_result = json.loads(response.text)
+            print(f"✅ Gemini Analysis: {gemini_result}")
             
         except Exception as e:
             print(f"❌ Gemini Error: {e}")
-            gemini_impression = "Clinical validation unavailable; data recorded for review."
+            gemini_result = {"score": 0, "reasoning": "Clinical system error. Manual review required."}
+
+    # Use Gemini's calculated data
+    final_score = gemini_result.get("score", 0)
+    final_reasoning = gemini_result.get("reasoning", "No reasoning provided.")
 
     # --- SAVE TO FIRESTORE ---
     doc_id = None
     if db:
         try:
             doc_ref = db.collection('screenings').add({
-                "risk_score": risk_score,
+                "risk_score": final_score,
                 "summary": summary,
-                "agent_validation": agent_validation,
-                "gemini_impression": gemini_impression,
+                "agent_validation": "Agent observation only", # Deprecated agent scoring
+                "gemini_impression": final_reasoning,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                "model": "gemini-2.0-flash-exp",
-                "source": "MindWell Agent v1"
+                "model": "gemini-1.5-flash",
+                "source": "MindWell Agent v2 (Gemini-Backend)"
             })
             doc_id = doc_ref[1].id
             print(f"💾 Saved to Firestore: {doc_id}")
         except Exception as e:
             print(f"❌ Firestore Error: {e}")
 
-    # --- RETURN TO AGENT (ElevenLabs Format) ---
+    # --- RETURN TO AGENT/FRONTEND ---
     return (jsonify({
         "success": True,
         "result": {
-            "validation": gemini_impression,
+            "validation": final_reasoning,
+            "score": final_score,
             "firestore_id": doc_id
         }
     }), 200, headers)

@@ -7,29 +7,32 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
     const [statusText, setStatusText] = useState('Idle');
 
     // --- CLIENT TOOL HANDLER (This makes it "Conversational") ---
-    const submitScreeningReport = useCallback(async ({ risk_score, summary }) => {
+    const submitScreeningReport = useCallback(async ({ summary }) => { // <--- ONLY SUMMARY HERE
         setStatusText('Analyzing Risk...');
         if (setIsProcessing) setIsProcessing(true); // START LOADING
         try {
-            // REPLACE with your actual deployed Cloud Function URL
-            const response = await fetch('http://localhost:8080/submit_screening_report', {
+            // REPLACE with your actual deployed Cloud Function URL (or ngrok for local dev)
+            // Example: "https://your-ngrok-id.ngrok-free.app/submit_screening_report"
+            const BACKEND_URL = "http://localhost:8080/submit_screening_report";
+
+            const response = await fetch(BACKEND_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ risk_score, summary })
+                body: JSON.stringify({ summary }) // Agent only sends summary now
             });
             const data = await response.json();
 
-            // Show the AI's "Thought" on the screen
+            // Show the AI's "Thought" on the screen (Data from Gemini Backend)
             if (setRiskData) {
                 setRiskData({
-                    score: risk_score,
+                    score: data.result?.score || 0,
                     summary: summary,
                     validation: data.result?.validation || "Analysis pending."
                 });
             }
             setStatusText('Saved');
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-            return "Report saved and validated by Gemini API.";
+            return "Report saved. Clinical analysis complete.";
         } catch (error) {
             console.error(error);
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
