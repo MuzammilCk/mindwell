@@ -24,7 +24,7 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
                 setRiskData({
                     score: risk_score,
                     summary: summary,
-                    validation: data.ai_validation
+                    validation: data.result?.validation || "Analysis pending."
                 });
             }
             setStatusText('Saved');
@@ -63,15 +63,27 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
     const isConnected = conversation.status === 'connected';
     const isSpeaking = conversation.isSpeaking;
 
+    const [isConnecting, setIsConnecting] = useState(false);
+
     const toggleConversation = async () => {
         if (isConnected) {
             await conversation.endSession();
         } else {
+            if (isConnecting) return; // Prevent double clicks
             if (!agentId) return alert("Agent ID missing!");
+
+            setIsConnecting(true);
+            setStatusText('Connecting...');
+
             try {
                 await navigator.mediaDevices.getUserMedia({ audio: true });
                 await conversation.startSession({ agentId: agentId });
-            } catch (err) { console.error(err); }
+            } catch (err) {
+                console.error(err);
+                setStatusText('Failed');
+            } finally {
+                setIsConnecting(false);
+            }
         }
     };
 
@@ -102,7 +114,9 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
                         </div>
                     ) : (
                         <div className="text-gray-500 group-hover:text-white transition-colors duration-500">
-                            <span className="text-[10px] tracking-[0.3em] font-sans">START SESSION</span>
+                            <span className="text-[10px] tracking-[0.3em] font-sans">
+                                {isConnecting ? 'CONNECTING...' : 'START SESSION'}
+                            </span>
                         </div>
                     )}
                 </div>

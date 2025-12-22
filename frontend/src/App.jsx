@@ -16,19 +16,15 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white flex flex-col relative overflow-hidden font-serif selection:bg-white selection:text-black">
+    <div className="h-screen w-screen bg-[#080808] text-white flex flex-col relative overflow-hidden font-serif selection:bg-white selection:text-black">
       {/* Background Ambience */}
       <div className="bg-noise fixed inset-0 opacity-5 pointer-events-none"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-white/5 rounded-full blur-[150px] pointer-events-none opacity-20"></div>
 
-      {/* Navbar */}
-      <nav className="relative z-10 flex justify-between items-center p-8 md:p-12 text-[10px] tracking-[0.2em] font-sans text-gray-400">
-        <div className="cursor-pointer hover:text-white transition-colors">MENU →</div>
-        <div className={riskData ? "text-purple-400" : ""}>STATUS: {riskData ? "ASSESSMENT COMPLETE" : (isSessionActive ? "SESSION ACTIVE" : "IDLE")}</div>
-      </nav>
+
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col items-center justify-between py-24 relative z-10 px-6 w-full max-w-7xl mx-auto">
+      <main className="flex-1 flex flex-col items-center justify-center gap-6 py-4 relative z-10 px-6 w-full max-w-7xl mx-auto">
 
         {/* 1. HERO TEXT (Fades out when session starts) */}
         <AnimatePresence>
@@ -36,7 +32,7 @@ function App() {
             <motion.div
               exit={{ opacity: 0, y: -50, scale: 0.95 }}
               transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-              className="text-center flex flex-col items-center gap-8 mt-12"
+              className="text-center flex flex-col items-center gap-6 mb-8 mt-12"
             >
               <h1 className="text-5xl md:text-7xl lg:text-8xl leading-[0.9] tracking-tight text-white/90">
                 Intelligent <span className="font-serif italic font-light text-white/70">Conversation</span><br />
@@ -56,7 +52,6 @@ function App() {
 
         {/* 2. THE SESSION CONTAINER (Pushed to bottom/center via flex) */}
         <motion.div
-          layout
           initial={false}
           animate={{
             width: isSessionActive || riskData ? "100%" : "auto",
@@ -69,7 +64,7 @@ function App() {
             boxShadow: isSessionActive || riskData ? "0 25px 50px -12px rgba(0, 0, 0, 0.5)" : "none"
           }}
           transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
-          className="relative flex flex-col items-center justify-center overflow-hidden min-h-[400px]"
+          className="relative flex flex-col items-center justify-center overflow-hidden min-h-[max-content]"
         >
           {/* ANALYZING SPINNER (Fades in overlay) */}
           <AnimatePresence>
@@ -129,7 +124,7 @@ function App() {
               </motion.div>
             ) : (
               /* B. ORB VIEW (Persistent) */
-              <motion.div key="orb" className="relative z-10 py-12">
+              <motion.div key="orb" className="relative z-10 py-4 px-12">
                 <Conversation
                   setRiskData={setRiskData}
                   setShowHelplines={setShowHelplines}
@@ -153,13 +148,15 @@ function App() {
 
       </main>
 
-      <footer className="relative z-10 flex justify-between items-end p-8 md:p-12 text-[10px] tracking-[0.1em] font-sans text-gray-600">
-        <div>
-          <h3 className="text-white tracking-[0.2em] mb-1">MINDWELL</h3>
-          <p>©2025 ALL RIGHTS RESERVED.</p>
-        </div>
-        <div className="cursor-pointer hover:text-white transition-colors">SUPPORT</div>
-      </footer>
+      {!isSessionActive && !riskData && (
+        <footer className="absolute bottom-0 left-0 z-10 flex justify-between items-center px-8 md:px-12 pb-8 pt-4 text-[10px] tracking-[0.1em] font-sans text-gray-600 w-full">
+          <div>
+            <h3 className="text-white tracking-[0.2em] mb-1">MINDWELL</h3>
+            <p>©2025 ALL RIGHTS RESERVED.</p>
+          </div>
+          <div className="cursor-pointer hover:text-white transition-colors">SUPPORT</div>
+        </footer>
+      )}
     </div>
   );
 }
