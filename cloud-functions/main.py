@@ -4,6 +4,9 @@ from google.cloud import firestore
 import google.generativeai as genai
 import datetime
 import os
+from dotenv import load_dotenv
+
+load_dotenv() # Load variables from .env if present
 
 # --- CONFIGURATION (SECURE) ---
 API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -16,12 +19,13 @@ try:
 except Exception as e:
     print(f"⚠️ Firestore Error: {e}")
 
+
 model = None
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        print("✅ Gemini API Connected (gemini-1.5-flash)")
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        print("✅ Gemini API Connected (gemini-2.0-flash)")
     except Exception as e:
         print(f"⚠️ Gemini Init Error: {e}")
 else:
@@ -83,13 +87,43 @@ OUTPUT FORMAT (Strict JSON):
   "reasoning": "string"
 }}
 """
-            response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-            import json
-            gemini_result = json.loads(response.text)
-            print(f"✅ Gemini Analysis: {gemini_result}")
+            # NEW: Configure Safety Settings to allow medical/symptom analysis
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold
             
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            }
+
+            response = model.generate_content(
+                prompt, 
+                generation_config={"response_mime_type": "application/json"},
+                safety_settings=safety_settings
+            )
+            
+            try:
+                # Debug: Print raw text to see if it's blocked or markdown-wrapped
+                raw_text = response.text
+                print(f"🔍 Raw Gemini Response: {raw_text}")
+                
+                # Clean Markdown (```json ... ```)
+                cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
+                
+                import json
+                gemini_result = json.loads(cleaned_text)
+                print(f"✅ Gemini Analysis: {gemini_result}")
+                
+            except Exception as parse_error:
+                print(f"⚠️ Response Parsing Error: {parse_error}")
+                # Log feedback if blocked
+                if response.prompt_feedback:
+                    print(f"⚠️ Safety Feedback: {response.prompt_feedback}")
+                raise parse_error
+
         except Exception as e:
-            print(f"❌ Gemini Error: {e}")
+            print(f"❌ Gemini System Error: {type(e).__name__} - {e}")
             gemini_result = {"score": 0, "reasoning": "Clinical system error. Manual review required."}
 
     # Use Gemini's calculated data
@@ -106,7 +140,7 @@ OUTPUT FORMAT (Strict JSON):
                 "agent_validation": "Agent observation only", # Deprecated agent scoring
                 "gemini_impression": final_reasoning,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                "model": "gemini-1.5-flash",
+                "model": "gemini-2.0-flash",
                 "source": "MindWell Agent v2 (Gemini-Backend)"
             })
             doc_id = doc_ref[1].id
