@@ -15,9 +15,9 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 db = None
 try:
     db = firestore.Client()
-    print("✅ Firestore Connected")
+    print("[OK] Firestore Connected")
 except Exception as e:
-    print(f"⚠️ Firestore Error: {e}")
+    print(f"[WARN] Firestore Error: {e}")
 
 
 model = None
@@ -25,11 +25,11 @@ if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
         model = genai.GenerativeModel('gemini-2.0-flash')
-        print("✅ Gemini API Connected (gemini-2.0-flash)")
+        print("[OK] Gemini API Connected (gemini-2.0-flash)")
     except Exception as e:
-        print(f"⚠️ Gemini Init Error: {e}")
+        print(f"[WARN] Gemini Init Error: {e}")
 else:
-    print("⚠️ GEMINI_API_KEY not found in environment")
+    print("[WARN] GEMINI_API_KEY not found in environment")
 
 # --- MAIN FUNCTION ---
 @functions_framework.http
@@ -57,7 +57,7 @@ def submit_screening_report(request):
 
     # Extract fields (Agents only send summary now)
     summary = request_json.get('summary', 'No summary provided.')
-    print(f"📥 Received Summary: {summary[:50]}...")
+    print(f"[IN] Received Summary: {summary[:50]}...")
 
     # --- GEMINI INTELLIGENCE (Diagnosis & Scoring) ---
     gemini_result = {
@@ -66,65 +66,86 @@ def submit_screening_report(request):
     }
     
     if model:
-        try:
-            prompt = f"""You are a senior clinical psychologist. Analyze the following patient summary from a screening interview.
+        # Define models to try in order
+        models_to_try = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
+        last_error = "No attempt made."
+        
+        from google.api_core.exceptions import ResourceExhausted
+
+        for model_name in models_to_try:
+            try:
+                print(f"[TRY] Attempting analysis with {model_name}...")
+                current_model = genai.GenerativeModel(model_name)
+                
+                heading = "You are a senior clinical psychologist. Analyze the following patient summary from a screening interview."
+                prompt_text = f"""{heading}
 
 PATIENT SUMMARY:
 {summary}
 
 TASK:
-1. Assign a Risk Score (0-10) based on these factors:
-   - Physical symptoms (sleep/appetite): +2
-   - Emotional distress (hopelessness): +3
-   - Social withdrawal: +2
-   - Risk of self-harm: +10 (Immediate High Risk)
+1. Assign a Risk Score (0-10) using this PRECISE scale:
+   - 0-1: Normal/Healthy
+   - 2-4: Mild Risk
+   - 5-7: Moderate Risk
+   - 8-9: Severe Risk (But NO immediate danger)
+   - 10: CRITICAL (Clear plan for suicide/self-harm ONLY)
    
-2. Write a 1-sentence clinical validation (under 20 words).
+   *CONSTRAINT 1*: If the summary contains metaphors (e.g. "drowning", "exploding") but NO explicit intent to die, the Maximum Score is 8.
+   *CONSTRAINT 2*: "Existential Crisis" or "Philosophical Nihilism" (questioning life's meaning without active suicidal intent) should be scored 2-5 (Mild/Moderate), NOT 0. It is a form of distress.
+   
+2. Write a 1-sentence clinical validation.
 
 OUTPUT FORMAT (Strict JSON):
 {{
-  "score": int,
-  "reasoning": "string"
+  "reasoning": "First analyze the risk factors and EXPLAIN why it is or isn't a 10...",
+  "score": int
 }}
 """
-            # NEW: Configure Safety Settings to allow medical/symptom analysis
-            from google.generativeai.types import HarmCategory, HarmBlockThreshold
-            
-            safety_settings = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
+                # NEW: Configure Safety Settings to allow medical/symptom analysis
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                
+                safety_settings = {
+                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                }
 
-            response = model.generate_content(
-                prompt, 
-                generation_config={"response_mime_type": "application/json"},
-                safety_settings=safety_settings
-            )
-            
-            try:
+                response = current_model.generate_content(
+                    prompt_text, 
+                    generation_config={"response_mime_type": "application/json"},
+                    safety_settings=safety_settings
+                )
+                
                 # Debug: Print raw text to see if it's blocked or markdown-wrapped
                 raw_text = response.text
-                print(f"🔍 Raw Gemini Response: {raw_text}")
+                print(f"[DEBUG] Raw Gemini Response ({model_name}): {raw_text}")
                 
                 # Clean Markdown (```json ... ```)
                 cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
                 
                 import json
                 gemini_result = json.loads(cleaned_text)
-                print(f"✅ Gemini Analysis: {gemini_result}")
+                print(f"[OK] Gemini Analysis Success with {model_name}: {gemini_result}")
                 
-            except Exception as parse_error:
-                print(f"⚠️ Response Parsing Error: {parse_error}")
-                # Log feedback if blocked
-                if response.prompt_feedback:
-                    print(f"⚠️ Safety Feedback: {response.prompt_feedback}")
-                raise parse_error
+                # Update the source model name for firestore
+                gemini_result['_source_model'] = model_name
+                break # Success! Exit loop
 
-        except Exception as e:
-            print(f"❌ Gemini System Error: {type(e).__name__} - {e}")
-            gemini_result = {"score": 0, "reasoning": "Clinical system error. Manual review required."}
+            except ResourceExhausted:
+                print(f"[WARN] Quota exceeded for {model_name}. Trying next model...")
+                continue
+            
+            except Exception as e:
+                print(f"[ERR] Gemini Error ({model_name}): {type(e).__name__} - {e}")
+                last_error = f"{type(e).__name__} - {str(e)}"
+                # Don't try to access 'response' here as it might not be defined
+                continue
+
+        # Check if we got a result
+        if gemini_result.get("score") == 0 and gemini_result.get("reasoning") == "Assessment pending.":
+             gemini_result = {"score": 0, "reasoning": f"Clinical system error: {last_error}"}
 
     # Use Gemini's calculated data
     final_score = gemini_result.get("score", 0)
@@ -140,13 +161,13 @@ OUTPUT FORMAT (Strict JSON):
                 "agent_validation": "Agent observation only", # Deprecated agent scoring
                 "gemini_impression": final_reasoning,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                "model": "gemini-2.0-flash",
+                "model": gemini_result.get('_source_model', 'gemini-2.0-flash'),
                 "source": "MindWell Agent v2 (Gemini-Backend)"
             })
             doc_id = doc_ref[1].id
-            print(f"💾 Saved to Firestore: {doc_id}")
+            print(f"[SAVE] Saved to Firestore: {doc_id}")
         except Exception as e:
-            print(f"❌ Firestore Error: {e}")
+            print(f"[ERR] Firestore Error: {e}")
 
     # --- RETURN TO AGENT/FRONTEND ---
     return (jsonify({

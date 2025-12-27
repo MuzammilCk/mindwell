@@ -131,7 +131,7 @@ function App() {
       <main className="flex-1 flex flex-col items-center justify-center gap-6 py-4 relative z-10 px-6 w-full max-w-7xl mx-auto">
 
         {/* 1. HERO TEXT (Fades out when session starts) */}
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           {!isSessionActive && !riskData && (
             <motion.div
               exit={{ opacity: 0, y: -50, scale: 0.95 }}
@@ -156,6 +156,7 @@ function App() {
 
         {/* 2. THE SESSION CONTAINER */}
         <motion.div
+          layout
           initial={false}
           animate={{
             width: isSessionActive || riskData ? "100%" : "auto",
@@ -168,10 +169,10 @@ function App() {
             boxShadow: isSessionActive || riskData ? "0 25px 50px -12px rgba(0, 0, 0, 0.5)" : "none"
           }}
           transition={{ duration: 0.8, type: "spring", bounce: 0.2 }}
-          className="relative flex flex-col items-center justify-center overflow-hidden min-h-[max-content]"
+          className="relative flex flex-col items-center justify-center overflow-hidden"
         >
           {/* ANALYZING SPINNER */}
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {isProcessing && (
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
