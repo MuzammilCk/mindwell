@@ -35,6 +35,10 @@ function App() {
   const [showHelplines, setShowHelplines] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [helplinesData, setHelplinesData] = useState([
+    { name: "Tele-MANAS", num: "14416", desc: "Govt. of India (24/7)" },
+    { name: "iCALL", num: "9152987821", desc: "TISS Support (Mon-Sat)" }
+  ]);
 
   // 1. Refined Risk Color Logic
   const getRiskColor = (score) => {
@@ -56,7 +60,7 @@ function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-[#080808] text-white flex flex-col relative overflow-hidden font-serif selection:bg-white selection:text-black">
+    <div className="min-h-screen w-screen bg-[#080808] text-white flex flex-col relative overflow-y-auto overflow-x-hidden font-serif selection:bg-white selection:text-black">
       {/* Background Ambience */}
       <div className="bg-noise fixed inset-0 opacity-5 pointer-events-none"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] bg-white/5 rounded-full blur-[150px] pointer-events-none opacity-20"></div>
@@ -94,7 +98,10 @@ function App() {
           animate={{
             width: isSessionActive || riskData ? "100%" : "auto",
             maxWidth: isSessionActive || riskData ? "42rem" : "auto", // max-w-2xl
-            padding: isSessionActive || riskData ? "3rem" : "0rem",
+            paddingTop: isSessionActive || riskData ? "2rem" : "0rem", // Reduced top padding
+            paddingBottom: isSessionActive || riskData ? "4rem" : "0rem", // Increased bottom padding
+            paddingLeft: isSessionActive || riskData ? "3rem" : "0rem",
+            paddingRight: isSessionActive || riskData ? "3rem" : "0rem",
             background: isSessionActive || riskData ? "rgba(255, 255, 255, 0.03)" : "rgba(255, 255, 255, 0)",
             backdropFilter: isSessionActive || riskData ? "blur(20px)" : "blur(0px)",
             border: isSessionActive || riskData ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(255, 255, 255, 0)",
@@ -147,7 +154,7 @@ function App() {
                 </div>
 
                 {/* VALIDATION TEXT (Typewriter) */}
-                <div className="mb-8 min-h-[80px]">
+                <div className="mb-8 min-h-[80px] max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar">
                   <p className="text-xl md:text-2xl font-light leading-relaxed text-gray-200 font-serif">
                     "<StreamingText content={riskData.validation} />"
                   </p>
@@ -164,13 +171,10 @@ function App() {
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 pt-6 border-t border-white/5"
                   >
-                    {[
-                      { name: "Tele-MANAS", num: "14416", desc: "Govt. of India (24/7)" },
-                      { name: "iCALL", num: "9152987821", desc: "TISS Support (Mon-Sat)" }
-                    ].map((line, i) => (
+                    {helplinesData.map((line, i) => (
                       <div key={i} className="group bg-white/5 border border-white/10 p-4 rounded-lg hover:border-purple-500/50 transition-colors">
-                        <div className="text-[10px] text-purple-300 tracking-widest mb-1">{line.desc}</div>
-                        <a href={`tel:${line.num}`} className="text-lg font-serif text-white hover:text-purple-300 transition-colors">
+                        <div className="text-[10px] text-purple-300 tracking-widest mb-1">{line.description || line.desc}</div>
+                        <a href={`tel:${line.number || line.num}`} className="text-lg font-serif text-white hover:text-purple-300 transition-colors">
                           {line.name} ↗
                         </a>
                       </div>
@@ -200,6 +204,7 @@ function App() {
                 <Conversation
                   setRiskData={setRiskData}
                   setShowHelplines={setShowHelplines}
+                  setHelplinesData={setHelplinesData}
                   setIsProcessing={setIsProcessing}
                   onSessionStart={() => setIsSessionActive(true)}
                   onSessionEnd={() => setIsSessionActive(false)}

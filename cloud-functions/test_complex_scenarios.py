@@ -22,9 +22,11 @@ def print_result(title, result, expected_risk_range=None):
     data = result.get("result", {})
     score = data.get("score")
     validation = data.get("validation")
+    reasoning = data.get("reasoning") # Internal logic
     
     print(f"{Fore.YELLOW}Risk Score: {Fore.WHITE}{score}")
-    print(f"{Fore.YELLOW}Agent Response: {Fore.WHITE}{validation}")
+    print(f"{Fore.YELLOW}Agent Voice (Validation): {Fore.WHITE}{validation}")
+    print(f"{Fore.CYAN}Internal Logic (Reasoning): {Fore.WHITE}{reasoning}")
     
     # Validation Logic
     passed = True

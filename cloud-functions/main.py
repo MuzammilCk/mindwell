@@ -61,7 +61,8 @@ def submit_screening_report(request):
     # --- GEMINI INTELLIGENCE (Diagnosis & Scoring) ---
     gemini_result = {
         "score": 0,
-        "reasoning": "Assessment pending."
+        "reasoning": "Assessment pending.",
+        "validation": "I am unable to process the assessment at this moment."
     }
     
     if API_KEY:
@@ -78,7 +79,7 @@ def submit_screening_report(request):
                 current_model = genai.GenerativeModel(model_name)
                 
                 heading = "You are a senior clinical psychologist. Analyze the following patient summary from a screening interview."
-                # [PROMPT REFACTOR]: Strict constraint against extra text
+                # [PROMPT REFACTOR]: 3-Part JSON for separate internal reasoning and user validation
                 prompt_text = f"""{heading}
 
 PATIENT SUMMARY:
@@ -95,12 +96,14 @@ TASK:
    *CONSTRAINT 1*: If the summary contains metaphors (e.g. "drowning", "exploding") but NO explicit intent to die, the Maximum Score is 8.
    *CONSTRAINT 2*: "Existential Crisis" or "Philosophical Nihilism" (questioning life's meaning without active suicidal intent) should be scored 2-5 (Mild/Moderate), NOT 0. It is a form of distress.
    
-2. Write a 1-sentence clinical validation.
+2. Write a Clinical Reasoning (INTERNAL ONLY). Explain the score based on symptoms.
+3. Write a Clinical Validation (USER FACING). A warm, empathetic, 1-sentence response intended for the user/voice agent to say.
 
 OUTPUT FORMAT (Strict JSON ONLY):
 DO NOT return conversational filler like "Here is the JSON". Just the raw JSON object.
 {{
-  "reasoning": "First analyze the risk factors and EXPLAIN why it is or isn't a 10...",
+  "reasoning": "Internal clinical analysis...",
+  "validation": "Warm, empathetic response for the patient...",
   "score": int
 }}
 """
@@ -139,12 +142,14 @@ DO NOT return conversational filler like "Here is the JSON". Just the raw JSON o
                         break # Success! Exit loop
                     else:
                          print(f"[WARN] No JSON found in response: {raw_text}")
+                         last_error = f"No JSON found in response. Raw: {raw_text[:100]}"
                          # Fallback for simple parse if regex fails but it looks like json
                          if '{' in raw_text:
                              gemini_result = json.loads(raw_text)
                              break
                 except Exception as json_err:
                      print(f"[WARN] JSON parsing failed: {json_err}")
+                     last_error = f"JSON parse error: {json_err}"
                      continue
 
             except ResourceExhausted:
@@ -158,11 +163,12 @@ DO NOT return conversational filler like "Here is the JSON". Just the raw JSON o
 
         # Check if we got a result
         if gemini_result.get("score") == 0 and gemini_result.get("reasoning") == "Assessment pending.":
-             gemini_result = {"score": 0, "reasoning": f"Clinical system error: {last_error}"}
+             gemini_result = {"score": 0, "reasoning": f"Clinical system error: {last_error}", "validation": "I'm having trouble connecting to the clinical database."}
 
     # Use Gemini's calculated data
     final_score = gemini_result.get("score", 0)
     final_reasoning = gemini_result.get("reasoning", "No reasoning provided.")
+    final_validation = gemini_result.get("validation", "Thank you for sharing that with me.")
 
     # --- SAVE TO FIRESTORE ---
     doc_id = None

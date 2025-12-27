@@ -1,8 +1,8 @@
 import { useConversation } from '@elevenlabs/react';
 import { motion } from 'framer-motion';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
-export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, onSessionStart, onSessionEnd }) {
+export function Conversation({ setRiskData, setShowHelplines, setHelplinesData, setIsProcessing, onSessionStart, onSessionEnd }) {
     const [agentId] = useState(import.meta.env.VITE_ELEVENLABS_AGENT_ID || '');
     const [statusText, setStatusText] = useState('Idle');
 
@@ -41,24 +41,48 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
 
             // 2. [CRITICAL FIX] Return the GEMINI result to the ElevenLabs Agent
             // Voice-Ready Response: Concise and natural for the agent to speak.
-            return `I have analyzed the screening. The clinical assessment indicates ${data.result?.validation}. The calculated risk score is ${data.result?.score} out of 10.`;
+            // Using 'validation' field which is now separate from internal 'reasoning'
+            const voiceResponse = data.result?.validation || "I've processed the screening, but I'm having trouble retrieving the specific feedback right now.";
+            return voiceResponse;
         } catch (error) {
             console.error("[Tool] ERROR:", error);
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-            return "Failed to save report. Please check the backend connection.";
+            return "I'm having technical trouble connecting to the backend. Please try again.";
         }
     }, [setRiskData, setIsProcessing]);
 
     const getHelplines = useCallback(async () => {
-        if (setShowHelplines) setShowHelplines(true);
-        return "Displaying helplines now.";
-    }, [setShowHelplines]);
+        try {
+            // Dynamic Backend URL
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
+            const response = await fetch(`${BACKEND_URL}/get_helplines`);
+            const data = await response.json();
+
+            if (setShowHelplines && data.helplines) {
+                if (setHelplinesData) {
+                    setHelplinesData(data.helplines);
+                }
+                setShowHelplines(true);
+            }
+            return "I have listed some important mental health helplines on your screen. You can contact them for immediate support.";
+        } catch (e) {
+            console.error("Failed to fetch helplines", e);
+            if (setShowHelplines) setShowHelplines(true); // Fallback to hardcoded if fetch fails
+            return "I've put up the helpline numbers for you.";
+        }
+    }, [setShowHelplines, setHelplinesData]);
 
     // --- AGENT CONFIG ---
     const conversation = useConversation({
         onConnect: () => {
-            setStatusText('Listening');
-            if (onSessionStart) onSessionStart();
+            // Visual Cue: Syncing state before Listening
+            setStatusText('Syncing...');
+
+            // 500ms Delay to ensure audio channel is truly open and user is ready
+            setTimeout(() => {
+                setStatusText('Listening');
+                if (onSessionStart) onSessionStart();
+            }, 500);
         },
         onDisconnect: () => {
             setStatusText('Disconnected');
@@ -77,6 +101,17 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
 
     const [isConnecting, setIsConnecting] = useState(false);
 
+    // --- MICROPHONE WARMUP ---
+    useEffect(() => {
+        // Pre-warm microphone permission on mount
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                // permission granted, close stream immediately to release resource until needed
+                stream.getTracks().forEach(track => track.stop());
+            })
+            .catch(err => console.log("Mic permission not yet granted (will ask on click)", err));
+    }, []);
+
     const toggleConversation = async () => {
         if (isConnected) {
             await conversation.endSession();
@@ -88,12 +123,18 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
             setStatusText('Connecting...');
 
             try {
-                await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Start Session directly (mic is likely already warm)
                 await conversation.startSession({ agentId: agentId });
             } catch (err) {
                 console.error(err);
                 setStatusText('Failed');
-            } finally {
+                setIsConnecting(false); // Reset on error
+            }
+            // Note: We don't set setIsConnecting(false) here on success because 
+            // onConnect will trigger the next state. 
+            // Actually, strictly speaking, we should reset it, but 'isConnected' will take over UI.
+            // Let's reset it in finally to be safe.
+            finally {
                 setIsConnecting(false);
             }
         }
@@ -116,9 +157,17 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
                     {isConnected ? (
                         <div className="relative w-full h-full rounded-full overflow-hidden flex items-center justify-center">
                             <motion.div
-                                animate={{ scale: isSpeaking ? [1, 1.2, 1] : 1.0, opacity: isSpeaking ? 0.8 : 0.4 }}
-                                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                                className="w-16 h-16 bg-gradient-to-tr from-purple-500 to-blue-500 rounded-full blur-[30px]"
+                                animate={{
+                                    scale: statusText === 'Syncing...' ? [1, 1.1, 1] : (isSpeaking ? [1, 1.2, 1] : 1.0),
+                                    opacity: statusText === 'Syncing...' ? 0.6 : (isSpeaking ? 0.8 : 0.4)
+                                }}
+                                transition={{
+                                    repeat: Infinity,
+                                    duration: statusText === 'Syncing...' ? 0.8 : 1.5, // Faster pulse for syncing
+                                    ease: "easeInOut"
+                                }}
+                                className={`w-16 h-16 rounded-full blur-[30px] ${statusText === 'Syncing...' ? 'bg-amber-400' : 'bg-gradient-to-tr from-purple-500 to-blue-500'
+                                    }`}
                             />
                             <div className="absolute text-[10px] tracking-widest font-sans text-white font-bold mix-blend-overlay text-center px-2">
                                 {statusText.toUpperCase()}
