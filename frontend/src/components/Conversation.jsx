@@ -7,22 +7,29 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
     const [statusText, setStatusText] = useState('Idle');
 
     // --- CLIENT TOOL HANDLER (This makes it "Conversational") ---
-    const submitScreeningReport = useCallback(async ({ summary }) => { // <--- ONLY SUMMARY HERE
+    const submitScreeningReport = useCallback(async (params) => {
+        console.log("[Tool] submit_screening_report CALLED with:", params);
+        const { summary } = params || {}; // Handle potential missing params
+
         setStatusText('Analyzing Risk...');
         if (setIsProcessing) setIsProcessing(true); // START LOADING
         try {
             // Dynamic Backend URL for easier deployment
             const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080/submit_screening_report";
+            console.log("[Tool] Fetching:", BACKEND_URL);
 
             const response = await fetch(BACKEND_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ summary }) // Agent only sends summary now
             });
+            console.log("[Tool] Response Status:", response.status);
             const data = await response.json();
+            console.log("[Tool] Response Data:", data);
 
             // Show the AI's "Thought" on the screen (Data from Gemini Backend)
             if (setRiskData) {
+                console.log("[Tool] Setting Risk Data...");
                 setRiskData({
                     score: data.result?.score || 0,
                     summary: summary,
@@ -36,9 +43,9 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
             // Voice-Ready Response: Concise and natural for the agent to speak.
             return `I have analyzed the screening. The clinical assessment indicates ${data.result?.validation}. The calculated risk score is ${data.result?.score} out of 10.`;
         } catch (error) {
-            console.error(error);
+            console.error("[Tool] ERROR:", error);
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-            return "Failed to save.";
+            return "Failed to save report. Please check the backend connection.";
         }
     }, [setRiskData, setIsProcessing]);
 
@@ -50,7 +57,7 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
     // --- AGENT CONFIG ---
     const conversation = useConversation({
         onConnect: () => {
-            setStatusText('Connected');
+            setStatusText('Listening');
             if (onSessionStart) onSessionStart();
         },
         onDisconnect: () => {
