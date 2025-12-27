@@ -1,99 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Conversation } from './components/Conversation';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- TYPEWRITER EFFECT COMPONENT ---
-const TypewriterText = ({ text }) => {
-  const [displayedText, setDisplayedText] = useState('');
-
-  // Reset when text changes
-  if (text !== displayedText && !displayedText.startsWith(text.substring(0, 1))) {
-    // This check is a bit naive for React strict mode, but useEffect below handles the typing.
-  }
-
-  useState(() => {
-    setDisplayedText('');
-  }, [text]);
-
-  const [index, setIndex] = useState(0);
-
-  // Effect to handle typing
-  if (index < text.length) {
-    setTimeout(() => {
-      setDisplayedText(prev => prev + text.charAt(index));
-      setIndex(prev => prev + 1);
-    }, 30); // Speed of typing
-  }
-
-  return <span>{displayedText}</span>;
-};
-
-// Hook version is cleaner for this functional component structure
-const useTypewriter = (text, speed = 30) => {
-  const [displayText, setDisplayText] = useState('');
-
-  useState(() => {
-    let i = 0;
-    const timer = setInterval(() => {
-      if (i < text.length) {
-        setDisplayText(prev => prev + text.charAt(i));
-        i++;
-      } else {
-        clearInterval(timer);
-      }
-    }, speed);
-    return () => clearInterval(timer);
-  }, [text, speed]);
-
-  return displayText;
-};
-
-// Simple Component wrapper for the hook
-const Typewriter = ({ text }) => {
-  const [display, setDisplay] = useState('');
-
-  // Reset/Start typing when text changes
-  const [hasStarted, setHasStarted] = useState(false);
-
-  if (!hasStarted) {
-    setHasStarted(true);
-    let i = 0;
-    const interval = setInterval(() => {
-      setDisplay(text.substring(0, i + 1));
-      i++;
-      if (i === text.length) clearInterval(interval);
-    }, 30);
-  }
-
-  return <span>{display || text}</span>; // Fallback to full text if logic glitches
-};
-
-// BETTER IMPLEMENTATION directly in the render with a key to reset
+// Refined implementation using useEffect for stability
 const StreamingText = ({ content }) => {
-  const [text, setText] = useState("");
+  const [displayedText, setDisplayedText] = useState("");
 
-  // Reset when content changes
-  if (content && text === "" && content.length > 0) {
-    // Trigger effect
-  }
+  useEffect(() => {
+    // Reset if content changes significantly or is new
+    setDisplayedText("");
+    let index = 0;
 
-  const [started, setStarted] = useState(false);
+    if (!content) return;
 
-  // Using a simple interval in useEffect
-  useState(() => {
-    let i = -1;
-    const interval = setInterval(() => {
-      i++;
-      if (i <= content.length) {
-        setText(content.substring(0, i));
+    const intervalId = setInterval(() => {
+      index++;
+      if (index <= content.length) {
+        setDisplayedText(content.substring(0, index));
       } else {
-        clearInterval(interval);
+        clearInterval(intervalId);
       }
-    }, 30);
-    return () => clearInterval(interval);
+    }, 20); // Slightly faster for better UX
+
+    return () => clearInterval(intervalId);
   }, [content]);
 
-  return <span>{text}</span>;
+  return <span>{displayedText}</span>;
 };
 
 

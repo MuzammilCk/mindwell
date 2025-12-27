@@ -1,10 +1,12 @@
 import requests
 import json
 import time
+import sys
 from colorama import Fore, Style, init
 
 # Initialize colors
 init(autoreset=True)
+sys.stdout.reconfigure(encoding='utf-8')
 
 BASE_URL = "http://localhost:8080/submit_screening_report"
 

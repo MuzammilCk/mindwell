@@ -11,9 +11,8 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
         setStatusText('Analyzing Risk...');
         if (setIsProcessing) setIsProcessing(true); // START LOADING
         try {
-            // REPLACE with your actual deployed Cloud Function URL (or ngrok for local dev)
-            // Example: "https://your-ngrok-id.ngrok-free.app/submit_screening_report"
-            const BACKEND_URL = "http://localhost:8080/submit_screening_report";
+            // Dynamic Backend URL for easier deployment
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080/submit_screening_report";
 
             const response = await fetch(BACKEND_URL, {
                 method: 'POST',
@@ -34,8 +33,8 @@ export function Conversation({ setRiskData, setShowHelplines, setIsProcessing, o
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING
 
             // 2. [CRITICAL FIX] Return the GEMINI result to the ElevenLabs Agent
-            // This allows the Agent to say: "I see the report indicates high anxiety..."
-            return `Report processed. Clinical Result: ${data.result?.validation}. Risk Score: ${data.result?.score}.`;
+            // Voice-Ready Response: Concise and natural for the agent to speak.
+            return `I have analyzed the screening. The clinical assessment indicates ${data.result?.validation}. The calculated risk score is ${data.result?.score} out of 10.`;
         } catch (error) {
             console.error(error);
             if (setIsProcessing) setIsProcessing(false); // STOP LOADING

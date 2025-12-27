@@ -19,13 +19,12 @@ try:
 except Exception as e:
     print(f"[WARN] Firestore Error: {e}")
 
+model_name_default = 'models/gemini-2.0-flash'
 
-model = None
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        print("[OK] Gemini API Connected (gemini-2.0-flash)")
+        print("[OK] Gemini API Configured")
     except Exception as e:
         print(f"[WARN] Gemini Init Error: {e}")
 else:
@@ -65,12 +64,13 @@ def submit_screening_report(request):
         "reasoning": "Assessment pending."
     }
     
-    if model:
-        # Define models to try in order
-        models_to_try = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest']
+    if API_KEY:
+        # Define models to try in order (Fixed naming convention)
+        models_to_try = ['models/gemini-2.0-flash', 'models/gemini-2.0-flash-lite', 'models/gemini-flash-latest']
         last_error = "No attempt made."
         
         from google.api_core.exceptions import ResourceExhausted
+        import re 
 
         for model_name in models_to_try:
             try:
@@ -78,6 +78,7 @@ def submit_screening_report(request):
                 current_model = genai.GenerativeModel(model_name)
                 
                 heading = "You are a senior clinical psychologist. Analyze the following patient summary from a screening interview."
+                # [PROMPT REFACTOR]: Strict constraint against extra text
                 prompt_text = f"""{heading}
 
 PATIENT SUMMARY:
@@ -96,7 +97,8 @@ TASK:
    
 2. Write a 1-sentence clinical validation.
 
-OUTPUT FORMAT (Strict JSON):
+OUTPUT FORMAT (Strict JSON ONLY):
+DO NOT return conversational filler like "Here is the JSON". Just the raw JSON object.
 {{
   "reasoning": "First analyze the risk factors and EXPLAIN why it is or isn't a 10...",
   "score": int
@@ -122,16 +124,28 @@ OUTPUT FORMAT (Strict JSON):
                 raw_text = response.text
                 print(f"[DEBUG] Raw Gemini Response ({model_name}): {raw_text}")
                 
-                # Clean Markdown (```json ... ```)
-                cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
-                
-                import json
-                gemini_result = json.loads(cleaned_text)
-                print(f"[OK] Gemini Analysis Success with {model_name}: {gemini_result}")
-                
-                # Update the source model name for firestore
-                gemini_result['_source_model'] = model_name
-                break # Success! Exit loop
+                # Robust Pattern Matching for JSON
+                try:
+                    # Finds the first valid JSON object in the string
+                    json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                    if json_match:
+                        cleaned_text = json_match.group(0)
+                        import json
+                        gemini_result = json.loads(cleaned_text)
+                        print(f"[OK] Gemini Analysis Success with {model_name}: {gemini_result}")
+                        
+                        # Update the source model name for firestore
+                        gemini_result['_source_model'] = model_name
+                        break # Success! Exit loop
+                    else:
+                         print(f"[WARN] No JSON found in response: {raw_text}")
+                         # Fallback for simple parse if regex fails but it looks like json
+                         if '{' in raw_text:
+                             gemini_result = json.loads(raw_text)
+                             break
+                except Exception as json_err:
+                     print(f"[WARN] JSON parsing failed: {json_err}")
+                     continue
 
             except ResourceExhausted:
                 print(f"[WARN] Quota exceeded for {model_name}. Trying next model...")
@@ -140,7 +154,6 @@ OUTPUT FORMAT (Strict JSON):
             except Exception as e:
                 print(f"[ERR] Gemini Error ({model_name}): {type(e).__name__} - {e}")
                 last_error = f"{type(e).__name__} - {str(e)}"
-                # Don't try to access 'response' here as it might not be defined
                 continue
 
         # Check if we got a result
