@@ -211,16 +211,6 @@ Tele-MANAS: 14416 or 1800 891 4416
 
 KIRAN: 1800-599-0019
 
-🛣️ Enterprise Roadmap
-[x] Phase 1: Initial Prototype with Gemini reasoning & cloud function architecture[cite: 1].
-
-[x] Phase 2: Complete migration from ElevenLabs to Sarvam AI voice stack (Saaras v3 + Bulbul v3).
-
-[ ] Phase 3: WebSockets integration via LiveKit/Pipecat for sub-300ms bidirectional voice streaming.
-
-[ ] Phase 4: B2B Institutional Dashboard for university counseling centers (anonymized campus stress analytics).
-
-[ ] Phase 5: Longitudinal offline-first mood tracking and therapist report generation.
 
 ⚠️ Medical Disclaimer
 IMPORTANT: MindWell is an AI-powered screening and emotional grounding companion[cite: 1]. It does not provide medical advice, psychiatric diagnosis, or formal clinical treatment[cite: 1]. MindWell is intended solely for early self-reflection and triage[cite: 1]. Anyone experiencing a mental health emergency should immediately contact qualified healthcare professionals or emergency hotline services.
