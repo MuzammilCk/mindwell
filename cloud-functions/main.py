@@ -234,7 +234,7 @@ async def websocket_conversation(websocket: WebSocket):
                         if msg.get("type") == "audio" and msg.get("audio"):
                             await stt_socket.transcribe(
                                 audio=msg["audio"],
-                                encoding="pcm_s16le",
+                                encoding="audio/wav",
                                 sample_rate=16000
                             )
                         elif msg.get("type") == "end":
