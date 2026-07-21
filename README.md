@@ -198,6 +198,7 @@ JSON
     "recommended_resource": "breathing_exercise"
   }
 }
+```
 🚨 Safety & Crisis Intervention
 MindWell is engineered with an active safety circuit:
 
