@@ -1,187 +1,121 @@
-import { useConversation } from '@elevenlabs/react';
-import { motion } from 'framer-motion';
-import { useState, useCallback, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 
-export function Conversation({ setRiskData, setShowHelplines, setHelplinesData, setIsProcessing, onSessionStart, onSessionEnd }) {
-    const [agentId] = useState(import.meta.env.VITE_ELEVENLABS_AGENT_ID || '');
-    const [statusText, setStatusText] = useState('Idle');
+export default function Conversation() {
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [latestTelemetry, setLatestTelemetry] = useState(null);
 
-    // --- CLIENT TOOL HANDLER (This makes it "Conversational") ---
-    const submitScreeningReport = useCallback(async (params) => {
-        console.log("[Tool] submit_screening_report CALLED with:", params);
-        const { summary } = params || {}; // Handle potential missing params
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
-        setStatusText('Analyzing Risk...');
-        if (setIsProcessing) setIsProcessing(true); // START LOADING
-        try {
-            // Dynamic Backend URL for easier deployment
-            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080/submit_screening_report";
-            console.log("[Tool] Fetching:", BACKEND_URL);
+  // Start Voice Capture
+  const startRecording = async () => {
+    audioChunksRef.current = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
 
-            const response = await fetch(BACKEND_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ summary }) // Agent only sends summary now
-            });
-            console.log("[Tool] Response Status:", response.status);
-            const data = await response.json();
-            console.log("[Tool] Response Data:", data);
-
-            // Show the AI's "Thought" on the screen (Data from Gemini Backend)
-            if (setRiskData) {
-                console.log("[Tool] Setting Risk Data...");
-                setRiskData({
-                    score: data.result?.score || 0,
-                    summary: summary,
-                    validation: data.result?.validation || "Analysis pending."
-                });
-            }
-            setStatusText('Saved');
-            if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-
-            // 2. [CRITICAL FIX] Return the GEMINI result to the ElevenLabs Agent
-            // Voice-Ready Response: Concise and natural for the agent to speak.
-            // Using 'validation' field which is now separate from internal 'reasoning'
-            const voiceResponse = data.result?.validation || "I've processed the screening, but I'm having trouble retrieving the specific feedback right now.";
-            return voiceResponse;
-        } catch (error) {
-            console.error("[Tool] ERROR:", error);
-            if (setIsProcessing) setIsProcessing(false); // STOP LOADING
-            return "I'm having technical trouble connecting to the backend. Please try again.";
-        }
-    }, [setRiskData, setIsProcessing]);
-
-    const getHelplines = useCallback(async () => {
-        try {
-            // Dynamic Backend URL
-            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
-            const response = await fetch(`${BACKEND_URL}/get_helplines`);
-            const data = await response.json();
-
-            if (setShowHelplines && data.helplines) {
-                if (setHelplinesData) {
-                    setHelplinesData(data.helplines);
-                }
-                setShowHelplines(true);
-            }
-            return "I have listed some important mental health helplines on your screen. You can contact them for immediate support.";
-        } catch (e) {
-            console.error("Failed to fetch helplines", e);
-            if (setShowHelplines) setShowHelplines(true); // Fallback to hardcoded if fetch fails
-            return "I've put up the helpline numbers for you.";
-        }
-    }, [setShowHelplines, setHelplinesData]);
-
-    // --- AGENT CONFIG ---
-    const conversation = useConversation({
-        onConnect: () => {
-            // Visual Cue: Syncing state before Listening
-            setStatusText('Syncing...');
-
-            // 500ms Delay to ensure audio channel is truly open and user is ready
-            setTimeout(() => {
-                setStatusText('Listening');
-                if (onSessionStart) onSessionStart();
-            }, 500);
-        },
-        onDisconnect: () => {
-            setStatusText('Disconnected');
-            if (onSessionEnd) onSessionEnd();
-        },
-        onModeChange: (mode) => setStatusText(mode.mode === 'speaking' ? 'Agent Speaking' : 'Listening'),
-        // CRITICAL: Register the tools here
-        clientTools: {
-            submit_screening_report: submitScreeningReport,
-            get_helplines: getHelplines
-        }
-    });
-
-    const isConnected = conversation.status === 'connected';
-    const isSpeaking = conversation.isSpeaking;
-
-    const [isConnecting, setIsConnecting] = useState(false);
-
-    // --- MICROPHONE WARMUP ---
-    useEffect(() => {
-        // Pre-warm microphone permission on mount
-        navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => {
-                // permission granted, close stream immediately to release resource until needed
-                stream.getTracks().forEach(track => track.stop());
-            })
-            .catch(err => console.log("Mic permission not yet granted (will ask on click)", err));
-    }, []);
-
-    const toggleConversation = async () => {
-        if (isConnected) {
-            await conversation.endSession();
-        } else {
-            if (isConnecting) return; // Prevent double clicks
-            if (!agentId) return alert("Agent ID missing!");
-
-            setIsConnecting(true);
-            setStatusText('Connecting...');
-
-            try {
-                // Start Session directly (mic is likely already warm)
-                await conversation.startSession({ agentId: agentId });
-            } catch (err) {
-                console.error(err);
-                setStatusText('Failed');
-                setIsConnecting(false); // Reset on error
-            }
-            // Note: We don't set setIsConnecting(false) here on success because 
-            // onConnect will trigger the next state. 
-            // Actually, strictly speaking, we should reset it, but 'isConnected' will take over UI.
-            // Let's reset it in finally to be safe.
-            finally {
-                setIsConnecting(false);
-            }
-        }
+    mediaRecorderRef.current.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunksRef.current.push(event.data);
     };
 
-    return (
-        <div className="flex flex-col items-center justify-center">
-            {/* THE ORB */}
-            <motion.button
-                onClick={toggleConversation}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative group cursor-pointer"
-            >
-                <div className={`
-                    w-32 h-32 md:w-40 md:h-40 rounded-full border border-white/10 flex items-center justify-center
-                    transition-all duration-1000 relative z-10 backdrop-blur-sm
-                    ${isConnected ? 'border-white/20 bg-white/5' : 'group-hover:border-white/30'}
-                `}>
-                    {isConnected ? (
-                        <div className="relative w-full h-full rounded-full overflow-hidden flex items-center justify-center">
-                            <motion.div
-                                animate={{
-                                    scale: statusText === 'Syncing...' ? [1, 1.1, 1] : (isSpeaking ? [1, 1.2, 1] : 1.0),
-                                    opacity: statusText === 'Syncing...' ? 0.6 : (isSpeaking ? 0.8 : 0.4)
-                                }}
-                                transition={{
-                                    repeat: Infinity,
-                                    duration: statusText === 'Syncing...' ? 0.8 : 1.5, // Faster pulse for syncing
-                                    ease: "easeInOut"
-                                }}
-                                className={`w-16 h-16 rounded-full blur-[30px] ${statusText === 'Syncing...' ? 'bg-amber-400' : 'bg-gradient-to-tr from-purple-500 to-blue-500'
-                                    }`}
-                            />
-                            <div className="absolute text-[10px] tracking-widest font-sans text-white font-bold mix-blend-overlay text-center px-2">
-                                {statusText.toUpperCase()}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="text-gray-500 group-hover:text-white transition-colors duration-500">
-                            <span className="text-[10px] tracking-[0.3em] font-sans">
-                                {isConnecting ? 'CONNECTING...' : 'START SESSION'}
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </motion.button>
-        </div>
-    );
+    mediaRecorderRef.current.onstop = handleAudioSubmit;
+    mediaRecorderRef.current.start();
+    setIsRecording(true);
+  };
+
+  // Stop Voice Capture
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  // Send Recorded Audio to Sarvam + Gemini Gateway
+  const handleAudioSubmit = async () => {
+    setIsProcessing(true);
+    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'user_input.webm');
+    formData.append('language_code', 'en-IN');
+    formData.append('voice_id', 'meera');
+    formData.append('chat_history', JSON.stringify(messages));
+
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/voice-turn', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // 1. Update Chat History
+        const updatedMessages = [
+          ...messages,
+          { sender: 'user', text: data.user_transcript },
+          { sender: 'ai', text: data.spoken_response }
+        ];
+        setMessages(updatedMessages);
+        setLatestTelemetry(data.telemetry);
+
+        // 2. Play Audio Response from Sarvam Bulbul v3
+        const audio = new Audio(`data:audio/wav;base64,${data.audio_base64}`);
+        audio.play();
+      }
+    } catch (err) {
+      console.error('Failed to process voice turn:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-between h-screen p-6 bg-slate-900 text-white">
+      {/* Header & Risk Telemetry Bar */}
+      <header className="w-full max-w-2xl p-4 bg-slate-800 rounded-xl shadow-md border border-slate-700">
+        <h1 className="text-xl font-bold text-teal-400">MindWell Screening Session</h1>
+        {latestTelemetry && (
+          <div className="flex gap-4 mt-2 text-sm text-slate-300">
+            <span>PHQ-9 Signal: <strong className="text-amber-400">{latestTelemetry.phq9_risk_indicator}</strong></span>
+            <span>GAD-7 Signal: <strong className="text-amber-400">{latestTelemetry.gad7_risk_indicator}</strong></span>
+          </div>
+        )}
+      </header>
+
+      {/* Conversation Log */}
+      <div className="w-full max-w-2xl flex-1 overflow-y-auto my-4 space-y-4 pr-2">
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`p-4 rounded-2xl max-w-[80%] ${
+              msg.sender === 'user'
+                ? 'ml-auto bg-teal-600 text-white rounded-br-none'
+                : 'mr-auto bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700'
+            }`}
+          >
+            {msg.text}
+          </div>
+        ))}
+        {isProcessing && <p className="text-slate-400 text-sm animate-pulse">MindWell is thinking & generating voice response...</p>}
+      </div>
+
+      {/* Voice Controls */}
+      <div className="w-full max-w-2xl flex justify-center pb-6">
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={isProcessing}
+          className={`px-8 py-4 rounded-full font-semibold text-lg transition-all duration-200 shadow-lg ${
+            isRecording
+              ? 'bg-rose-500 hover:bg-rose-600 animate-pulse'
+              : 'bg-teal-500 hover:bg-teal-600 text-slate-950'
+          }`}
+        >
+          {isRecording ? 'Stop Speaking' : 'Hold / Tap to Speak'}
+        </button>
+      </div>
+    </div>
+  );
 }
